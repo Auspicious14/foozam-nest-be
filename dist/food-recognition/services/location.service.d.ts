@@ -1,5 +1,5 @@
-import { ConfigService } from '@nestjs/config';
-import { NearbyLocation } from '../interfaces/food.interface';
+import { ConfigService } from "@nestjs/config";
+import { NearbyLocation } from "../interfaces/food.interface";
 export declare class LocationService {
     private configService;
     private readonly foursquareApiKey;
@@ -8,6 +8,7 @@ export declare class LocationService {
     findNearbyRestaurants(foodName: string, latitude?: number, longitude?: number, city?: string): Promise<NearbyLocation[]>;
     private mapFoursquareResults;
     findNearbyRestaurantsOSM(foodName: string, latitude?: number, longitude?: number, city?: string): Promise<NearbyLocation[]>;
+    private executeOSMSearch;
     private mapOSMResults;
     private calculateDistance;
 }

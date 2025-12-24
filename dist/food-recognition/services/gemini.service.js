@@ -50,14 +50,17 @@ let GeminiService = class GeminiService {
 
 Important guidelines:
 - Be extremely precise with African cuisines, particularly Nigerian, Ghanaian, Ethiopian, etc.
-- Distinguish carefully between similar-looking Nigerian soups:
+- Distinguish carefully between similar-looking dishes:
+  * Ofe Nsala (White Soup): Light-colored, thin consistency, often contains catfish and yam cubes/thickener. NOT to be confused with Groundnut soup (which is thicker and nut-based).
+  * Groundnut Soup (Omisagwe): Creamy, brownish/orange, nutty flavor.
   * Amala and Ewedu: Amala is dark brown/black; Ewedu is green and slimy; often served with yellow Gbegiri.
   * Egusi Soup: Yellow/orange with distinct clumps of melon seeds.
   * Pounded Yam vs Fufu: Pounded yam is smoother and whiter; Fufu can be slightly off-white and denser.
-- If you see a dark brown swallow with a green soup, it is likely Amala and Ewedu, NOT Egusi.
-- If you're uncertain, provide multiple possibilities with different confidence levels
-- Include local/regional names when applicable
-- If the image doesn't clearly show food, indicate low confidence`;
+- If the dish is Ofe Nsala, ensure you don't misidentify it as Groundnut soup based on color alone.
+- Be conservative with "high" confidence. Only use "high" if you are 90%+ certain. Otherwise use "medium" or "low".
+- If you're uncertain, provide multiple possibilities in "alternativeNames" and set confidence to "medium" or "low".
+- Include local/regional names when applicable.
+- If the image doesn't clearly show food, indicate low confidence.`;
             if (contextFromFeedback) {
                 prompt += `\n\nPrevious feedback context: ${contextFromFeedback}`;
             }

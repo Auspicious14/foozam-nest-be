@@ -16,13 +16,14 @@ const axios_1 = require("axios");
 let LocationService = class LocationService {
     constructor(configService) {
         this.configService = configService;
-        this.foursquareBaseUrl = 'https://api.foursquare.com/v3/places';
-        this.foursquareApiKey = this.configService.get('FOURSQUARE_API_KEY');
+        this.foursquareBaseUrl = "https://api.foursquare.com/v3/places";
+        this.foursquareApiKey =
+            this.configService.get("FOURSQUARE_API_KEY");
     }
     async findNearbyRestaurants(foodName, latitude, longitude, city) {
         try {
             if (!this.foursquareApiKey) {
-                console.warn('FOURSQUARE_API_KEY not configured, using OSM fallback');
+                console.warn("FOURSQUARE_API_KEY not configured, using OSM fallback");
                 return this.findNearbyRestaurantsOSM(foodName, latitude, longitude, city);
             }
             let query = foodName;
@@ -32,7 +33,7 @@ let LocationService = class LocationService {
             }
             const params = {
                 query,
-                categories: '13065',
+                categories: "13065",
                 limit: 10,
             };
             if (latitude && longitude) {
@@ -44,8 +45,8 @@ let LocationService = class LocationService {
             }
             const response = await axios_1.default.get(`${this.foursquareBaseUrl}/search`, {
                 headers: {
-                    'Authorization': this.foursquareApiKey,
-                    'Accept': 'application/json',
+                    Authorization: this.foursquareApiKey,
+                    Accept: "application/json",
                 },
                 params,
             });
@@ -54,22 +55,25 @@ let LocationService = class LocationService {
         catch (error) {
             const status = error.response?.status;
             if (status === 401) {
-                console.warn('Foursquare API Key is invalid or unauthorized (401). Falling back to OSM.');
+                console.warn("Foursquare API Key is invalid or unauthorized (401). Falling back to OSM.");
+            }
+            else if (status === 429) {
+                console.warn("Foursquare API rate limit exceeded (429). Falling back to OSM.");
             }
             else {
-                console.error('Foursquare Error:', error.message || error);
+                console.error("Foursquare Error:", error.message || error);
             }
             return this.findNearbyRestaurantsOSM(foodName, latitude, longitude, city);
         }
     }
     mapFoursquareResults(results) {
-        return results.map(place => ({
+        return results.map((place) => ({
             name: place.name,
             address: place.location?.formatted_address ||
-                `${place.location?.address || ''}, ${place.location?.locality || ''}`.trim(),
+                `${place.location?.address || ""}, ${place.location?.locality || ""}`.trim(),
             distance: place.distance || 0,
             rating: place.rating ? place.rating / 2 : undefined,
-            priceLevel: place.price ? '$'.repeat(place.price) : undefined,
+            priceLevel: place.price ? "$".repeat(place.price) : undefined,
             phone: place.tel,
             website: place.website,
             coordinates: {
@@ -80,40 +84,60 @@ let LocationService = class LocationService {
     }
     async findNearbyRestaurantsOSM(foodName, latitude, longitude, city) {
         try {
-            const query = `restaurant ${foodName} ${city || ''}`.trim();
-            const params = {
-                q: query,
-                format: 'json',
-                limit: 10,
-            };
-            if (latitude && longitude) {
-                params.lat = latitude;
-                params.lon = longitude;
-                params.bounded = 1;
-                params.viewbox = `${longitude - 0.1},${latitude - 0.1},${longitude + 0.1},${latitude + 0.1}`;
+            let query = `${foodName} restaurant`.trim();
+            let results = await this.executeOSMSearch(query, latitude, longitude);
+            if (results.length === 0) {
+                query = "restaurant";
+                results = await this.executeOSMSearch(query, latitude, longitude, city);
             }
-            const response = await axios_1.default.get('https://nominatim.openstreetmap.org/search', {
-                params,
-                headers: {
-                    'User-Agent': 'Foozam/1.0',
-                },
-            });
-            return this.mapOSMResults(response.data || [], latitude, longitude);
+            if (results.length === 0 && city) {
+                query = `${foodName} ${city}`;
+                results = await this.executeOSMSearch(query, latitude, longitude);
+            }
+            const mappedResults = this.mapOSMResults(results, latitude, longitude);
+            return mappedResults.sort((a, b) => a.distance - b.distance);
         }
         catch (error) {
-            console.error('OSM Location Error:', error);
+            console.error("OSM Location Error:", error.message || error);
             return [];
         }
     }
+    async executeOSMSearch(query, latitude, longitude, city, isFallback = false) {
+        const params = {
+            q: city ? `${query} near ${city}` : query,
+            format: "json",
+            limit: 15,
+            addressdetails: 1,
+            extratags: 1,
+            amenity: "restaurant,cafe,fast_food,food_court",
+        };
+        if (latitude && longitude) {
+            const delta = isFallback ? 0.2 : 0.05;
+            params.viewbox = `${longitude - delta},${latitude + delta},${longitude + delta},${latitude - delta}`;
+            params.bounded = 1;
+        }
+        const response = await axios_1.default.get("https://nominatim.openstreetmap.org/search", {
+            params,
+            headers: {
+                "User-Agent": "FoozamFoodRecognitionApp/1.0 (https://github.com/auspicious14/foozam-nest-be; contact@foozam-app.com)",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+        });
+        let results = response.data || [];
+        if (results.length === 0 && latitude && longitude && !isFallback) {
+            return this.executeOSMSearch(query, latitude, longitude, city, true);
+        }
+        return results;
+    }
     mapOSMResults(results, userLat, userLon) {
-        return results.map(place => {
+        return results.map((place) => {
             const lat = parseFloat(place.lat);
             const lon = parseFloat(place.lon);
             const distance = userLat && userLon
                 ? this.calculateDistance(userLat, userLon, lat, lon)
                 : 0;
             return {
-                name: place.display_name.split(',')[0],
+                name: place.display_name.split(",")[0],
                 address: place.display_name,
                 distance,
                 coordinates: {
@@ -125,13 +149,12 @@ let LocationService = class LocationService {
     }
     calculateDistance(lat1, lon1, lat2, lon2) {
         const R = 6371e3;
-        const φ1 = lat1 * Math.PI / 180;
-        const φ2 = lat2 * Math.PI / 180;
-        const Δφ = (lat2 - lat1) * Math.PI / 180;
-        const Δλ = (lon2 - lon1) * Math.PI / 180;
+        const φ1 = (lat1 * Math.PI) / 180;
+        const φ2 = (lat2 * Math.PI) / 180;
+        const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+        const Δλ = ((lon2 - lon1) * Math.PI) / 180;
         const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-            Math.cos(φ1) * Math.cos(φ2) *
-                Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+            Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         return R * c;
     }

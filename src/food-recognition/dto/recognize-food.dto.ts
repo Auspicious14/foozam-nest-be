@@ -9,6 +9,7 @@ import {
   IsArray,
 } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
+import { Type } from "class-transformer";
 
 export class RecognizeFoodDto {
   @ApiProperty({ type: "string", format: "binary" })
@@ -17,6 +18,7 @@ export class RecognizeFoodDto {
 
   @ApiProperty({ required: false })
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   @Min(-90)
   @Max(90)
@@ -24,6 +26,7 @@ export class RecognizeFoodDto {
 
   @ApiProperty({ required: false })
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   @Min(-180)
   @Max(180)
@@ -97,12 +100,14 @@ export class GetUserHistoryDto {
 
   @ApiProperty({ required: false })
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   @Min(1)
   limit?: number;
 
   @ApiProperty({ required: false })
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   @Min(0)
   offset?: number;
