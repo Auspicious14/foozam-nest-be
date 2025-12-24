@@ -103,13 +103,13 @@ let LocationService = class LocationService {
         }
     }
     async executeOSMSearch(query, latitude, longitude, city, isFallback = false) {
+        const finalQuery = city ? `${query} in ${city}` : query;
         const params = {
-            q: city ? `${query} near ${city}` : query,
+            q: finalQuery,
             format: "json",
             limit: 15,
             addressdetails: 1,
             extratags: 1,
-            amenity: "restaurant,cafe,fast_food,food_court",
         };
         if (latitude && longitude) {
             const delta = isFallback ? 0.2 : 0.05;

@@ -31,12 +31,12 @@ let AuthController = class AuthController {
                 throw new common_1.InternalServerErrorException(result);
             }
             const frontendUrl = this.configService.get("FRONTEND_URL") ||
-                "http://localhost:3000";
+                "http://localhost:5371";
             return res.redirect(`${frontendUrl}/auth/callback?token=${result.access_token}`);
         }
         catch (error) {
             const frontendUrl = this.configService.get("FRONTEND_URL") ||
-                "http://localhost:3000";
+                "http://localhost:5371";
             return res.redirect(`${frontendUrl}/auth/callback?error=auth_failed`);
         }
     }

@@ -135,14 +135,16 @@ export class LocationService {
     city?: string,
     isFallback: boolean = false
   ): Promise<any[]> {
+    // If we have coordinates, we can search for a broader term within a bounded box
+    // If not, we rely on the textual query
+    const finalQuery = city ? `${query} in ${city}` : query;
+
     const params: any = {
-      q: city ? `${query} near ${city}` : query,
+      q: finalQuery,
       format: "json",
       limit: 15,
       addressdetails: 1,
       extratags: 1,
-      // Add amenity filter to prioritize restaurants/cafes
-      amenity: "restaurant,cafe,fast_food,food_court",
     };
 
     if (latitude && longitude) {
