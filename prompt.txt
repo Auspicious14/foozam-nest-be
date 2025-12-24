@@ -1,0 +1,1116 @@
+// ============================================
+// PACKAGE.JSON DEPENDENCIES
+// ============================================
+/*
+{
+  "dependencies": {
+    "@nestjs/common": "^10.0.0",
+    "@nestjs/core": "^10.0.0",
+    "@nestjs/platform-express": "^10.0.0",
+    "@nestjs/config": "^3.1.1",
+    "@nestjs/swagger": "^7.1.16",
+    "@nestjs/mongoose": "^10.0.2",
+    "@google/generative-ai": "^0.2.1",
+    "mongoose": "^8.0.3",
+    "axios": "^1.6.2",
+    "class-validator": "^0.14.0",
+    "class-transformer": "^0.5.1",
+    "multer": "^1.4.5-lts.1",
+    "@types/multer": "^1.4.11"
+  }
+}
+*/
+
+// ============================================
+// .ENV FILE
+// ============================================
+/*
+GEMINI_API_KEY=your_gemini_pro_key
+FOURSQUARE_API_KEY=your_foursquare_key
+MONGODB_URI=mongodb://localhost:27017/foozam
+PORT=3000
+NODE_ENV=production
+MAX_FILE_SIZE=10485760
+ALLOWED_FILE_TYPES=image/jpeg,image/png,image/jpg,image/webp
+*/
+
+// ============================================
+// main.ts
+// ============================================
+import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { AppModule } from './app.module';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  
+  // Enable CORS
+  app.enableCors({
+    origin: process.env.CORS_ORIGIN || '*',
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true,
+  });
+
+  // Global validation pipe
+  app.useGlobalPipes(new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
+  }));
+
+  // Swagger documentation
+  const config = new DocumentBuilder()
+    .setTitle('Foozam API')
+    .setDescription('Shazam for food - AI-powered food recognition')
+    .setVersion('1.0')
+    .build();
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api', app, document);
+
+  const port = process.env.PORT || 3000;
+  await app.listen(port);
+  console.log(`🚀 Foozam API running on port ${port}`);
+}
+bootstrap();
+
+// ============================================
+// app.module.ts
+// ============================================
+import { Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { MongooseModule } from '@nestjs/mongoose';
+import { FoodRecognitionModule } from './food-recognition/food-recognition.module';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: '.env',
+    }),
+    MongooseModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: async (configService: ConfigService) => ({
+        uri: configService.get<string>('MONGODB_URI'),
+      }),
+      inject: [ConfigService],
+    }),
+    FoodRecognitionModule,
+  ],
+})
+export class AppModule {}
+
+// ============================================
+// food-recognition/food-recognition.module.ts
+// ============================================
+import { Module } from '@nestjs/common';
+import { MongooseModule } from '@nestjs/mongoose';
+import { FoodRecognitionController } from './food-recognition.controller';
+import { FoodRecognitionService } from './food-recognition.service';
+import { GeminiService } from './services/gemini.service';
+import { LocationService } from './services/location.service';
+import { FeedbackService } from './services/feedback.service';
+import { Recognition, RecognitionSchema } from './schemas/recognition.schema';
+import { Feedback, FeedbackSchema } from './schemas/feedback.schema';
+import { UserHistory, UserHistorySchema } from './schemas/user-history.schema';
+
+@Module({
+  imports: [
+    MongooseModule.forFeature([
+      { name: Recognition.name, schema: RecognitionSchema },
+      { name: Feedback.name, schema: FeedbackSchema },
+      { name: UserHistory.name, schema: UserHistorySchema },
+    ]),
+  ],
+  controllers: [FoodRecognitionController],
+  providers: [
+    FoodRecognitionService,
+    GeminiService,
+    LocationService,
+    FeedbackService,
+  ],
+})
+export class FoodRecognitionModule {}
+
+// ============================================
+// food-recognition/schemas/recognition.schema.ts
+// ============================================
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document } from 'mongoose';
+
+@Schema({ timestamps: true })
+export class Recognition extends Document {
+  @Prop({ required: true, unique: true })
+  recognitionId: string;
+
+  @Prop({ required: true })
+  foodName: string;
+
+  @Prop({ required: true, enum: ['high', 'medium', 'low'] })
+  confidence: string;
+
+  @Prop({ type: [String], default: [] })
+  alternativeNames: string[];
+
+  @Prop({ type: Object, required: true })
+  origin: {
+    country: string;
+    region?: string;
+  };
+
+  @Prop({ type: [String], default: [] })
+  ingredients: string[];
+
+  @Prop({ required: true })
+  description: string;
+
+  @Prop({ required: true })
+  culturalContext: string;
+
+  @Prop({ type: Object })
+  nutritionalInfo: {
+    calories?: string;
+    mainNutrients?: string[];
+  };
+
+  @Prop({ type: [Object], default: [] })
+  similarDishes: Array<{
+    name: string;
+    origin: string;
+  }>;
+
+  @Prop()
+  imageHash?: string;
+
+  @Prop({ type: Object })
+  location?: {
+    latitude: number;
+    longitude: number;
+    city?: string;
+  };
+
+  @Prop()
+  userId?: string;
+
+  @Prop({ default: false })
+  wasCorrected: boolean;
+}
+
+export const RecognitionSchema = SchemaFactory.createForClass(Recognition);
+
+// Index for efficient queries
+RecognitionSchema.index({ foodName: 'text', 'origin.country': 'text' });
+RecognitionSchema.index({ createdAt: -1 });
+RecognitionSchema.index({ userId: 1 });
+
+// ============================================
+// food-recognition/schemas/feedback.schema.ts
+// ============================================
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document, Types } from 'mongoose';
+
+@Schema({ timestamps: true })
+export class Feedback extends Document {
+  @Prop({ type: Types.ObjectId, ref: 'Recognition', required: true })
+  recognitionId: Types.ObjectId;
+
+  @Prop({ required: true })
+  originalPrediction: string;
+
+  @Prop({ required: true })
+  correctFoodName: string;
+
+  @Prop({ required: true })
+  correctOrigin: string;
+
+  @Prop()
+  userId?: string;
+
+  @Prop({ type: Object })
+  additionalNotes?: {
+    correctIngredients?: string[];
+    correctDescription?: string;
+  };
+}
+
+export const FeedbackSchema = SchemaFactory.createForClass(Feedback);
+
+// Index for analytics
+FeedbackSchema.index({ originalPrediction: 1 });
+FeedbackSchema.index({ correctFoodName: 1 });
+FeedbackSchema.index({ createdAt: -1 });
+
+// ============================================
+// food-recognition/schemas/user-history.schema.ts
+// ============================================
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Document, Types } from 'mongoose';
+
+@Schema({ timestamps: true })
+export class UserHistory extends Document {
+  @Prop({ required: true })
+  userId: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'Recognition', required: true })
+  recognitionId: Types.ObjectId;
+
+  @Prop({ required: true })
+  foodName: string;
+
+  @Prop({ required: true })
+  origin: string;
+
+  @Prop({ type: Object })
+  location?: {
+    latitude: number;
+    longitude: number;
+    city?: string;
+  };
+
+  @Prop({ default: false })
+  isFavorite: boolean;
+
+  @Prop({ type: [String], default: [] })
+  tags: string[];
+}
+
+export const UserHistorySchema = SchemaFactory.createForClass(UserHistory);
+
+// Indexes
+UserHistorySchema.index({ userId: 1, createdAt: -1 });
+UserHistorySchema.index({ userId: 1, foodName: 1 });
+UserHistorySchema.index({ userId: 1, isFavorite: 1 });
+
+// ============================================
+// food-recognition/dto/recognize-food.dto.ts
+// ============================================
+import { IsNotEmpty, IsNumber, IsOptional, IsString, Min, Max, IsBoolean, IsArray } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+
+export class RecognizeFoodDto {
+  @ApiProperty({ type: 'string', format: 'binary' })
+  @IsNotEmpty()
+  image: any;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  latitude?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  longitude?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  city?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  userId?: string;
+}
+
+export class FeedbackDto {
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  recognitionId: string;
+
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  correctFoodName: string;
+
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  correctOrigin: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  userId?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsArray()
+  correctIngredients?: string[];
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  correctDescription?: string;
+}
+
+export class UpdateHistoryDto {
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  historyId: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  isFavorite?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsArray()
+  tags?: string[];
+}
+
+export class GetUserHistoryDto {
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  userId: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  limit?: number;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  offset?: number;
+}
+
+// ============================================
+// food-recognition/interfaces/food.interface.ts
+// ============================================
+export interface FoodRecognitionResult {
+  recognitionId: string;
+  foodName: string;
+  confidence: 'high' | 'medium' | 'low';
+  alternativeNames: string[];
+  origin: {
+    country: string;
+    region?: string;
+  };
+  ingredients: string[];
+  description: string;
+  culturalContext: string;
+  nutritionalInfo?: {
+    calories?: string;
+    mainNutrients?: string[];
+  };
+  similarDishes?: Array<{
+    name: string;
+    origin: string;
+  }>;
+}
+
+export interface NearbyLocation {
+  name: string;
+  address: string;
+  distance: number;
+  rating?: number;
+  priceLevel?: string;
+  phone?: string;
+  website?: string;
+  coordinates: {
+    latitude: number;
+    longitude: number;
+  };
+}
+
+export interface FoozamResponse {
+  success: boolean;
+  data: {
+    recognition: FoodRecognitionResult;
+    nearbyPlaces: NearbyLocation[];
+    similarRecognitions?: FoodRecognitionResult[];
+  };
+  timestamp: string;
+}
+
+// ============================================
+// food-recognition/services/gemini.service.ts
+// ============================================
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { FoodRecognitionResult } from '../interfaces/food.interface';
+import * as crypto from 'crypto';
+
+@Injectable()
+export class GeminiService {
+  private genAI: GoogleGenerativeAI;
+  private model: any;
+
+  constructor(private configService: ConfigService) {
+    const apiKey = this.configService.get<string>('GEMINI_API_KEY');
+    if (!apiKey) {
+      throw new Error('GEMINI_API_KEY is not configured');
+    }
+    this.genAI = new GoogleGenerativeAI(apiKey);
+    this.model = this.genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+  }
+
+  async recognizeFood(imageBuffer: Buffer, contextFromFeedback?: string): Promise<FoodRecognitionResult> {
+    try {
+      const imagePart = {
+        inlineData: {
+          data: imageBuffer.toString('base64'),
+          mimeType: 'image/jpeg',
+        },
+      };
+
+      let prompt = `Analyze this food image in detail and provide a comprehensive JSON response with the following structure:
+
+{
+  "foodName": "Primary name of the dish",
+  "confidence": "high|medium|low",
+  "alternativeNames": ["alternative name 1", "alternative name 2"],
+  "origin": {
+    "country": "Country of origin",
+    "region": "Specific region if applicable"
+  },
+  "ingredients": ["ingredient 1", "ingredient 2", "ingredient 3"],
+  "description": "A brief 2-3 sentence description of the dish",
+  "culturalContext": "Cultural significance and traditional context",
+  "nutritionalInfo": {
+    "calories": "Approximate calorie range",
+    "mainNutrients": ["nutrient 1", "nutrient 2"]
+  },
+  "similarDishes": [
+    {"name": "Similar dish name", "origin": "Country"}
+  ]
+}
+
+Important guidelines:
+- Be especially attentive to African cuisines (Nigerian, Ghanaian, Ethiopian, etc.)
+- If you're uncertain, provide multiple possibilities with different confidence levels
+- For Nigerian dishes like jollof rice, suya, egusi soup, puff-puff, etc., be very specific
+- Include local/regional names when applicable
+- If the image doesn't clearly show food, indicate low confidence`;
+
+      if (contextFromFeedback) {
+        prompt += `\n\nPrevious feedback context: ${contextFromFeedback}`;
+      }
+
+      prompt += '\n\nReturn ONLY valid JSON, no markdown formatting or additional text.';
+
+      const result = await this.model.generateContent([prompt, imagePart]);
+      const response = await result.response;
+      const text = response.text();
+
+      const cleanedText = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(cleanedText);
+
+      return {
+        recognitionId: this.generateRecognitionId(),
+        foodName: parsed.foodName,
+        confidence: parsed.confidence || 'medium',
+        alternativeNames: parsed.alternativeNames || [],
+        origin: parsed.origin,
+        ingredients: parsed.ingredients || [],
+        description: parsed.description,
+        culturalContext: parsed.culturalContext,
+        nutritionalInfo: parsed.nutritionalInfo,
+        similarDishes: parsed.similarDishes || [],
+      };
+    } catch (error) {
+      console.error('Gemini API Error:', error);
+      throw new InternalServerErrorException('Failed to recognize food image');
+    }
+  }
+
+  generateImageHash(imageBuffer: Buffer): string {
+    return crypto.createHash('sha256').update(imageBuffer).digest('hex');
+  }
+
+  private generateRecognitionId(): string {
+    return `rec_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
+  }
+}
+
+// ============================================
+// food-recognition/services/location.service.ts
+// ============================================
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
+import { NearbyLocation } from '../interfaces/food.interface';
+
+@Injectable()
+export class LocationService {
+  private readonly foursquareApiKey: string;
+  private readonly foursquareBaseUrl = 'https://api.foursquare.com/v3/places';
+
+  constructor(private configService: ConfigService) {
+    this.foursquareApiKey = this.configService.get<string>('FOURSQUARE_API_KEY');
+  }
+
+  async findNearbyRestaurants(
+    foodName: string,
+    latitude?: number,
+    longitude?: number,
+    city?: string,
+  ): Promise<NearbyLocation[]> {
+    try {
+      if (!this.foursquareApiKey) {
+        console.warn('FOURSQUARE_API_KEY not configured, using OSM fallback');
+        return this.findNearbyRestaurantsOSM(foodName, latitude, longitude, city);
+      }
+
+      let query = foodName;
+      const originMatch = foodName.match(/nigerian|ghanaian|ethiopian|kenyan|indian|chinese|mexican|italian/i);
+      if (originMatch) {
+        query = `${originMatch[0]} restaurant`;
+      }
+
+      const params: any = {
+        query,
+        categories: '13065',
+        limit: 10,
+      };
+
+      if (latitude && longitude) {
+        params.ll = `${latitude},${longitude}`;
+        params.radius = 10000;
+      } else if (city) {
+        params.near = city;
+      }
+
+      const response = await axios.get(`${this.foursquareBaseUrl}/search`, {
+        headers: {
+          'Authorization': this.foursquareApiKey,
+          'Accept': 'application/json',
+        },
+        params,
+      });
+
+      return this.mapFoursquareResults(response.data.results || []);
+    } catch (error) {
+      console.error('Foursquare Error, trying OSM:', error);
+      return this.findNearbyRestaurantsOSM(foodName, latitude, longitude, city);
+    }
+  }
+
+  private mapFoursquareResults(results: any[]): NearbyLocation[] {
+    return results.map(place => ({
+      name: place.name,
+      address: place.location?.formatted_address || 
+               `${place.location?.address || ''}, ${place.location?.locality || ''}`.trim(),
+      distance: place.distance || 0,
+      rating: place.rating ? place.rating / 2 : undefined,
+      priceLevel: place.price ? '$'.repeat(place.price) : undefined,
+      phone: place.tel,
+      website: place.website,
+      coordinates: {
+        latitude: place.geocodes?.main?.latitude || 0,
+        longitude: place.geocodes?.main?.longitude || 0,
+      },
+    }));
+  }
+
+  async findNearbyRestaurantsOSM(
+    foodName: string,
+    latitude?: number,
+    longitude?: number,
+    city?: string,
+  ): Promise<NearbyLocation[]> {
+    try {
+      const query = `restaurant ${foodName} ${city || ''}`.trim();
+      
+      const params: any = {
+        q: query,
+        format: 'json',
+        limit: 10,
+      };
+
+      if (latitude && longitude) {
+        params.lat = latitude;
+        params.lon = longitude;
+        params.bounded = 1;
+        params.viewbox = `${longitude - 0.1},${latitude - 0.1},${longitude + 0.1},${latitude + 0.1}`;
+      }
+
+      const response = await axios.get('https://nominatim.openstreetmap.org/search', {
+        params,
+        headers: {
+          'User-Agent': 'Foozam/1.0',
+        },
+      });
+
+      return this.mapOSMResults(response.data || [], latitude, longitude);
+    } catch (error) {
+      console.error('OSM Location Error:', error);
+      return [];
+    }
+  }
+
+  private mapOSMResults(results: any[], userLat?: number, userLon?: number): NearbyLocation[] {
+    return results.map(place => {
+      const lat = parseFloat(place.lat);
+      const lon = parseFloat(place.lon);
+      const distance = userLat && userLon 
+        ? this.calculateDistance(userLat, userLon, lat, lon)
+        : 0;
+
+      return {
+        name: place.display_name.split(',')[0],
+        address: place.display_name,
+        distance,
+        coordinates: {
+          latitude: lat,
+          longitude: lon,
+        },
+      };
+    });
+  }
+
+  private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371e3;
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c;
+  }
+}
+
+// ============================================
+// food-recognition/services/feedback.service.ts
+// ============================================
+import { Injectable } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
+import { Feedback } from '../schemas/feedback.schema';
+import { Recognition } from '../schemas/recognition.schema';
+
+@Injectable()
+export class FeedbackService {
+  constructor(
+    @InjectModel(Feedback.name) private feedbackModel: Model<Feedback>,
+    @InjectModel(Recognition.name) private recognitionModel: Model<Recognition>,
+  ) {}
+
+  async storeFeedback(
+    recognitionId: string,
+    correctFoodName: string,
+    correctOrigin: string,
+    userId?: string,
+    additionalNotes?: any,
+  ): Promise<Feedback> {
+    // Find the recognition by recognitionId string
+    const recognition = await this.recognitionModel.findOne({ recognitionId });
+    
+    if (!recognition) {
+      throw new Error('Recognition not found');
+    }
+
+    const feedback = new this.feedbackModel({
+      recognitionId: recognition._id,
+      originalPrediction: recognition.foodName,
+      correctFoodName,
+      correctOrigin,
+      userId,
+      additionalNotes,
+    });
+
+    await feedback.save();
+
+    // Mark recognition as corrected
+    await this.recognitionModel.updateOne(
+      { recognitionId },
+      { wasCorrected: true }
+    );
+
+    return feedback;
+  }
+
+  async getFeedbackContext(foodName: string): Promise<string> {
+    const feedbacks = await this.feedbackModel
+      .find({
+        $or: [
+          { originalPrediction: new RegExp(foodName, 'i') },
+          { correctFoodName: new RegExp(foodName, 'i') },
+        ],
+      })
+      .limit(5)
+      .sort({ createdAt: -1 });
+
+    if (feedbacks.length === 0) {
+      return '';
+    }
+
+    const context = feedbacks.map(f => 
+      `Previous users corrected "${f.originalPrediction}" to "${f.correctFoodName}" from ${f.correctOrigin}`
+    ).join('. ');
+
+    return context;
+  }
+
+  async getSimilarRecognitions(foodName: string, limit: number = 5): Promise<Recognition[]> {
+    return this.recognitionModel
+      .find({
+        $or: [
+          { foodName: new RegExp(foodName, 'i') },
+          { alternativeNames: new RegExp(foodName, 'i') },
+        ],
+      })
+      .limit(limit)
+      .sort({ createdAt: -1 })
+      .exec();
+  }
+
+  async getAccuracyStats(): Promise<any> {
+    const total = await this.recognitionModel.countDocuments();
+    const corrected = await this.recognitionModel.countDocuments({ wasCorrected: true });
+    
+    const accuracyByConfidence = await this.recognitionModel.aggregate([
+      {
+        $group: {
+          _id: '$confidence',
+          total: { $sum: 1 },
+          corrected: {
+            $sum: { $cond: ['$wasCorrected', 1, 0] }
+          },
+        },
+      },
+    ]);
+
+    return {
+      totalRecognitions: total,
+      correctedRecognitions: corrected,
+      accuracyRate: total > 0 ? ((total - corrected) / total * 100).toFixed(2) : 0,
+      byConfidence: accuracyByConfidence,
+    };
+  }
+}
+
+// ============================================
+// food-recognition/food-recognition.service.ts
+// ============================================
+import { Injectable } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { GeminiService } from './services/gemini.service';
+import { LocationService } from './services/location.service';
+import { FeedbackService } from './services/feedback.service';
+import { Recognition } from './schemas/recognition.schema';
+import { UserHistory } from './schemas/user-history.schema';
+import { FoozamResponse } from './interfaces/food.interface';
+
+@Injectable()
+export class FoodRecognitionService {
+  constructor(
+    private geminiService: GeminiService,
+    private locationService: LocationService,
+    private feedbackService: FeedbackService,
+    @InjectModel(Recognition.name) private recognitionModel: Model<Recognition>,
+    @InjectModel(UserHistory.name) private userHistoryModel: Model<UserHistory>,
+  ) {}
+
+  async recognizeFood(
+    imageBuffer: Buffer,
+    latitude?: number,
+    longitude?: number,
+    city?: string,
+    userId?: string,
+  ): Promise<FoozamResponse> {
+    // Generate image hash for deduplication
+    const imageHash = this.geminiService.generateImageHash(imageBuffer);
+
+    // Check for similar recent recognitions (optional deduplication)
+    const recentRecognition = await this.recognitionModel
+      .findOne({ imageHash })
+      .sort({ createdAt: -1 })
+      .exec();
+
+    let recognition;
+
+    if (recentRecognition && Date.now() - recentRecognition.createdAt.getTime() < 3600000) {
+      // Use cached recognition if less than 1 hour old
+      recognition = recentRecognition;
+    } else {
+      // Get feedback context for better recognition
+      const feedbackContext = await this.feedbackService.getFeedbackContext('');
+      
+      // Recognize food using Gemini
+      const recognitionResult = await this.geminiService.recognizeFood(imageBuffer, feedbackContext);
+
+      // Save to database
+      recognition = new this.recognitionModel({
+        ...recognitionResult,
+        imageHash,
+        location: latitude && longitude ? { latitude, longitude, city } : undefined,
+        userId,
+      });
+
+      await recognition.save();
+    }
+
+    // Find similar past recognitions
+    const similarRecognitions = await this.feedbackService.getSimilarRecognitions(
+      recognition.foodName,
+      3
+    );
+
+    // Save to user history if userId provided
+    if (userId) {
+      const historyEntry = new this.userHistoryModel({
+        userId,
+        recognitionId: recognition._id,
+        foodName: recognition.foodName,
+        origin: recognition.origin.country,
+        location: recognition.location,
+      });
+      await historyEntry.save();
+    }
+
+    // Find nearby restaurants
+    let nearbyPlaces = [];
+    try {
+      nearbyPlaces = await this.locationService.findNearbyRestaurants(
+        recognition.foodName,
+        latitude,
+        longitude,
+        city,
+      );
+    } catch (error) {
+      console.error('Error finding nearby places:', error);
+    }
+
+    return {
+      success: true,
+      data: {
+        recognition: {
+          recognitionId: recognition.recognitionId,
+          foodName: recognition.foodName,
+          confidence: recognition.confidence as any,
+          alternativeNames: recognition.alternativeNames,
+          origin: recognition.origin,
+          ingredients: recognition.ingredients,
+          description: recognition.description,
+          culturalContext: recognition.culturalContext,
+          nutritionalInfo: recognition.nutritionalInfo,
+          similarDishes: recognition.similarDishes,
+        },
+        nearbyPlaces,
+        similarRecognitions: similarRecognitions.map(r => ({
+          recognitionId: r.recognitionId,
+          foodName: r.foodName,
+          confidence: r.confidence as any,
+          alternativeNames: r.alternativeNames,
+          origin: r.origin,
+          ingredients: r.ingredients,
+          description: r.description,
+          culturalContext: r.culturalContext,
+          nutritionalInfo: r.nutritionalInfo,
+          similarDishes: r.similarDishes,
+        })),
+      },
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  async submitFeedback(
+    recognitionId: string,
+    correctFoodName: string,
+    correctOrigin: string,
+    userId?: string,
+    additionalNotes?: any,
+  ): Promise<void> {
+    await this.feedbackService.storeFeedback(
+      recognitionId,
+      correctFoodName,
+      correctOrigin,
+      userId,
+      additionalNotes,
+    );
+  }
+
+  async getUserHistory(userId: string, limit: number = 20, offset: number = 0) {
+    return this.userHistoryModel
+      .find({ userId })
+      .sort({ createdAt: -1 })
+      .skip(offset)
+      .limit(limit)
+      .populate('recognitionId')
+      .exec();
+  }
+
+  async updateUserHistory(historyId: string, updates: any) {
+    return this.userHistoryModel.findByIdAndUpdate(
+      historyId,
+      updates,
+      { new: true }
+    ).exec();
+  }
+
+  async getUserStats(userId: string) {
+    const totalScans = await this.userHistoryModel.countDocuments({ userId });
+    const uniqueFoods = await this.userHistoryModel.distinct('foodName', { userId });
+    const uniqueOrigins = await this.userHistoryModel.distinct('origin', { userId });
+    const favorites = await this.userHistoryModel.countDocuments({ userId, isFavorite: true });
+
+    const topFoods = await this.userHistoryModel.aggregate([
+      { $match: { userId } },
+      { $group: { _id: '$foodName', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 5 },
+    ]);
+
+    return {
+      totalScans,
+      uniqueFoods: uniqueFoods.length,
+      uniqueOrigins: uniqueOrigins.length,
+      favorites,
+      topFoods: topFoods.map(f => ({ food: f._id, count: f.count })),
+    };
+  }
+
+  async getSystemStats() {
+    return this.feedbackService.getAccuracyStats();
+  }
+}
+
+// ============================================
+// food-recognition/food-recognition.controller.ts
+// ============================================
+import {
+  Controller,
+  Post,
+  Get,
+  Patch,
+  UseInterceptors,
+  UploadedFile,
+  Body,
+  Query,
+  Param,
+  BadRequestException,
+  HttpCode,
+  HttpStatus,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiConsumes, ApiQuery } from '@nestjs/swagger';
+import { FoodRecognitionService } from './food-recognition.service';
+import { RecognizeFoodDto, FeedbackDto, UpdateHistoryDto, GetUserHistoryDto } from './dto/recognize-food.dto';
+import { FoozamResponse } from './interfaces/food.interface';
+
+@ApiTags('Food Recognition')
+@Controller('food')
+export class FoodRecognitionController {
+  constructor(private readonly foodRecognitionService: FoodRecognitionService) {}
+
+  @Post('recognize')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Recognize food from image' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(
+    FileInterceptor('image', {
+      limits: {
+        fileSize: 10 * 1024 * 1024,
+      },
+      fileFilter: (req, file, cb) => {
+        if (!file.mimetype.match(/\/(jpg|jpeg|png|webp)$/)) {
+          return cb(new BadRequestException('Only image files are allowed'), false);
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  async recognizeFood(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: RecognizeFoodDto,
+  ): Promise<FoozamResponse> {
+    if (!file) {
+      throw new BadRequestException('Image file is required');
+    }
+
+    return this.foodRecognitionService.recognizeFood(
+      file.buffer,
+      body.latitude,
+      body.longitude,
+      body.city,
+      body.userId,
+    );
+  }
+
+  @Post('feedback')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Submit feedback for recognition correction' })
+  async submitFeedback(@Body() feedbackDto: FeedbackDto): Promise<{ message: string }> {
+    await this.foodRecognitionService.submitFeedback(
+      feedbackDto.recognitionId,
+      feedbackDto.correctFoodName,
+      feedbackDto.correctOrigin,
+      feedbackDto.userId,
+      {
+        correctIngredients: feedbackDto.correctIngredients,
+        correctDescription: feedbackDto.correctDescription,
+      },
+    );
+
+    return { message: 'Feedback submitted successfully. Thank you for helping improve Foozam!' };
+  }
+
+  @Get('history/:userId')
+  @ApiOperation({ summary: 'Get user scan history' })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
+  async getUserHistory(
+    @Param('userId') userId: string,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+  ) {
+    return this.foodRecognitionService.getUserHistory(
+      userId,
+      limit || 20,
+      offset || 0,
+    );
+  }
+
+  @Patch('history/:historyId')
+  @ApiOperation({ summary: 'Update user history entry (favorite, tags)' })
+  async updateHistory(
+    @Param('historyId') historyId: string,
+    @Body() updateDto: UpdateHistoryDto,
+  ) {
+    return this.foodRecognitionService.updateUserHistory(historyId, {
+      isFavorite: updateDto.isFavorite,
+      tags: updateDto.tags,
+    });
+  }
+
+  @Get('stats/user/:userId')
+  @ApiOperation({ summary: 'Get user statistics (food passport)' })
+  async getUserStats(@Param('userId') userId: string) {
+    return this.foodRecognitionService.getUserStats(userId);
+  }
+
+  @Get('stats/system')
+  @ApiOperation({ summary: 'Get system-wide accuracy statistics' })
+  async getSystemStats() {
+    return this.foodRecognitionService.getSystemStats();
+  }
+
+  @Get('health')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Health check endpoint' })
+  healthCheck(): { status: string; timestamp: string } {
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+    };
+  }
+}
