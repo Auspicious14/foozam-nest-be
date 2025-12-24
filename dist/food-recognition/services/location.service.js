@@ -136,10 +136,14 @@ let LocationService = class LocationService {
             const distance = userLat && userLon
                 ? this.calculateDistance(userLat, userLon, lat, lon)
                 : 0;
+            const extratags = place.extratags || {};
             return {
                 name: place.display_name.split(",")[0],
                 address: place.display_name,
                 distance,
+                rating: extratags.rating ? parseFloat(extratags.rating) : undefined,
+                phone: extratags.phone || extratags["contact:phone"],
+                website: extratags.website || extratags["contact:website"],
                 coordinates: {
                     latitude: lat,
                     longitude: lon,
