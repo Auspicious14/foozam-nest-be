@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { FoodRecognitionModule } from './food-recognition/food-recognition.module';
 import { AuthModule } from './auth/auth.module';
+import { AppController } from './app.controller';
 
 @Module({
   imports: [
@@ -20,5 +21,6 @@ import { AuthModule } from './auth/auth.module';
     AuthModule,
     FoodRecognitionModule,
   ],
+  controllers: [AppController],
 })
 export class AppModule {}

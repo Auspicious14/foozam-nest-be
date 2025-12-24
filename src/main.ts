@@ -2,14 +2,15 @@ import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
+import { Express } from "express";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // Enable CORS
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || "*",
-    methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+    origin: true,
+    methods: "GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS",
     credentials: true,
   });
 
@@ -31,8 +32,14 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup("api", app, document);
 
-  const port = process.env.PORT || 3000;
-  await app.listen(port);
-  console.log(`🚀 Foozam API running on port ${port}`);
+  if (process.env.NODE_ENV === "production" || process.env.VERCEL) {
+    await app.init();
+    return app.getHttpAdapter().getInstance() as any as Express;
+  } else {
+    const port = process.env.PORT || 3000;
+    await app.listen(port);
+    console.log(`🚀 Foozam API running on port ${port}`);
+  }
 }
-bootstrap();
+
+export default bootstrap();

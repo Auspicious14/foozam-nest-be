@@ -12,6 +12,7 @@ const config_1 = require("@nestjs/config");
 const mongoose_1 = require("@nestjs/mongoose");
 const food_recognition_module_1 = require("./food-recognition/food-recognition.module");
 const auth_module_1 = require("./auth/auth.module");
+const app_controller_1 = require("./app.controller");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -32,6 +33,7 @@ exports.AppModule = AppModule = __decorate([
             auth_module_1.AuthModule,
             food_recognition_module_1.FoodRecognitionModule,
         ],
+        controllers: [app_controller_1.AppController],
     })
 ], AppModule);
 //# sourceMappingURL=app.module.js.map
