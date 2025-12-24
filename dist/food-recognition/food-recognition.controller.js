@@ -18,24 +18,31 @@ const platform_express_1 = require("@nestjs/platform-express");
 const swagger_1 = require("@nestjs/swagger");
 const food_recognition_service_1 = require("./food-recognition.service");
 const recognize_food_dto_1 = require("./dto/recognize-food.dto");
+const passport_1 = require("@nestjs/passport");
+const get_user_decorator_1 = require("../auth/decorators/get-user.decorator");
 let FoodRecognitionController = class FoodRecognitionController {
     constructor(foodRecognitionService) {
         this.foodRecognitionService = foodRecognitionService;
     }
-    async recognizeFood(file, body) {
+    async recognizeFood(file, body, user) {
         if (!file) {
             throw new common_1.BadRequestException('Image file is required');
         }
-        return this.foodRecognitionService.recognizeFood(file.buffer, body.latitude, body.longitude, body.city, body.userId);
+        const userId = user?.userId || body.userId;
+        return this.foodRecognitionService.recognizeFood(file.buffer, body.latitude, body.longitude, body.city, userId);
     }
-    async submitFeedback(feedbackDto) {
-        await this.foodRecognitionService.submitFeedback(feedbackDto.recognitionId, feedbackDto.correctFoodName, feedbackDto.correctOrigin, feedbackDto.userId, {
+    async submitFeedback(feedbackDto, user) {
+        const userId = user?.userId || feedbackDto.userId;
+        await this.foodRecognitionService.submitFeedback(feedbackDto.recognitionId, feedbackDto.correctFoodName, feedbackDto.correctOrigin, userId, {
             correctIngredients: feedbackDto.correctIngredients,
             correctDescription: feedbackDto.correctDescription,
         });
         return { message: 'Feedback submitted successfully. Thank you for helping improve Foozam!' };
     }
-    async getUserHistory(userId, limit, offset) {
+    async getUserHistory(user, limit, offset) {
+        return this.foodRecognitionService.getUserHistory(user.userId, limit || 20, offset || 0);
+    }
+    async getUserHistoryLegacy(userId, limit, offset) {
         return this.foodRecognitionService.getUserHistory(userId, limit || 20, offset || 0);
     }
     async updateHistory(historyId, updateDto) {
@@ -76,8 +83,9 @@ __decorate([
     })),
     __param(0, (0, common_1.UploadedFile)()),
     __param(1, (0, common_1.Body)()),
+    __param(2, (0, get_user_decorator_1.GetUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, recognize_food_dto_1.RecognizeFoodDto]),
+    __metadata("design:paramtypes", [Object, recognize_food_dto_1.RecognizeFoodDto, Object]),
     __metadata("design:returntype", Promise)
 ], FoodRecognitionController.prototype, "recognizeFood", null);
 __decorate([
@@ -85,13 +93,28 @@ __decorate([
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     (0, swagger_1.ApiOperation)({ summary: 'Submit feedback for recognition correction' }),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, get_user_decorator_1.GetUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [recognize_food_dto_1.FeedbackDto]),
+    __metadata("design:paramtypes", [recognize_food_dto_1.FeedbackDto, Object]),
     __metadata("design:returntype", Promise)
 ], FoodRecognitionController.prototype, "submitFeedback", null);
 __decorate([
-    (0, common_1.Get)('history/:userId'),
+    (0, common_1.Get)('history'),
+    (0, common_1.UseGuards)((0, passport_1.AuthGuard)('jwt')),
+    (0, swagger_1.ApiBearerAuth)(),
     (0, swagger_1.ApiOperation)({ summary: 'Get user scan history' }),
+    (0, swagger_1.ApiQuery)({ name: 'limit', required: false, type: Number }),
+    (0, swagger_1.ApiQuery)({ name: 'offset', required: false, type: Number }),
+    __param(0, (0, get_user_decorator_1.GetUser)()),
+    __param(1, (0, common_1.Query)('limit')),
+    __param(2, (0, common_1.Query)('offset')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Number, Number]),
+    __metadata("design:returntype", Promise)
+], FoodRecognitionController.prototype, "getUserHistory", null);
+__decorate([
+    (0, common_1.Get)('history/:userId'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get user scan history (legacy/public)' }),
     (0, swagger_1.ApiQuery)({ name: 'limit', required: false, type: Number }),
     (0, swagger_1.ApiQuery)({ name: 'offset', required: false, type: Number }),
     __param(0, (0, common_1.Param)('userId')),
@@ -100,7 +123,7 @@ __decorate([
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, Number, Number]),
     __metadata("design:returntype", Promise)
-], FoodRecognitionController.prototype, "getUserHistory", null);
+], FoodRecognitionController.prototype, "getUserHistoryLegacy", null);
 __decorate([
     (0, common_1.Patch)('history/:historyId'),
     (0, swagger_1.ApiOperation)({ summary: 'Update user history entry (favorite, tags)' }),

@@ -4,11 +4,16 @@ import { FoozamResponse } from './interfaces/food.interface';
 export declare class FoodRecognitionController {
     private readonly foodRecognitionService;
     constructor(foodRecognitionService: FoodRecognitionService);
-    recognizeFood(file: Express.Multer.File, body: RecognizeFoodDto): Promise<FoozamResponse>;
-    submitFeedback(feedbackDto: FeedbackDto): Promise<{
+    recognizeFood(file: Express.Multer.File, body: RecognizeFoodDto, user?: any): Promise<FoozamResponse>;
+    submitFeedback(feedbackDto: FeedbackDto, user?: any): Promise<{
         message: string;
     }>;
-    getUserHistory(userId: string, limit?: number, offset?: number): Promise<(import("mongoose").Document<unknown, {}, import("./schemas/user-history.schema").UserHistory, {}, {}> & import("./schemas/user-history.schema").UserHistory & Required<{
+    getUserHistory(user: any, limit?: number, offset?: number): Promise<(import("mongoose").Document<unknown, {}, import("./schemas/user-history.schema").UserHistory, {}, {}> & import("./schemas/user-history.schema").UserHistory & Required<{
+        _id: import("mongoose").Types.ObjectId;
+    }> & {
+        __v: number;
+    })[]>;
+    getUserHistoryLegacy(userId: string, limit?: number, offset?: number): Promise<(import("mongoose").Document<unknown, {}, import("./schemas/user-history.schema").UserHistory, {}, {}> & import("./schemas/user-history.schema").UserHistory & Required<{
         _id: import("mongoose").Types.ObjectId;
     }> & {
         __v: number;

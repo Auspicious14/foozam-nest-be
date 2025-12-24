@@ -11,12 +11,16 @@ import {
   BadRequestException,
   HttpCode,
   HttpStatus,
+  UseGuards,
+  Req,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiConsumes, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiConsumes, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { FoodRecognitionService } from './food-recognition.service';
 import { RecognizeFoodDto, FeedbackDto, UpdateHistoryDto, GetUserHistoryDto } from './dto/recognize-food.dto';
 import { FoozamResponse } from './interfaces/food.interface';
+import { AuthGuard } from '@nestjs/passport';
+import { GetUser } from '../auth/decorators/get-user.decorator';
 
 @ApiTags('Food Recognition')
 @Controller('food')
@@ -43,29 +47,37 @@ export class FoodRecognitionController {
   async recognizeFood(
     @UploadedFile() file: Express.Multer.File,
     @Body() body: RecognizeFoodDto,
+    @GetUser() user?: any,
   ): Promise<FoozamResponse> {
     if (!file) {
       throw new BadRequestException('Image file is required');
     }
+
+    const userId = user?.userId || body.userId;
 
     return this.foodRecognitionService.recognizeFood(
       file.buffer,
       body.latitude,
       body.longitude,
       body.city,
-      body.userId,
+      userId,
     );
   }
 
   @Post('feedback')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Submit feedback for recognition correction' })
-  async submitFeedback(@Body() feedbackDto: FeedbackDto): Promise<{ message: string }> {
+  async submitFeedback(
+    @Body() feedbackDto: FeedbackDto,
+    @GetUser() user?: any,
+  ): Promise<{ message: string }> {
+    const userId = user?.userId || feedbackDto.userId;
+
     await this.foodRecognitionService.submitFeedback(
       feedbackDto.recognitionId,
       feedbackDto.correctFoodName,
       feedbackDto.correctOrigin,
-      feedbackDto.userId,
+      userId,
       {
         correctIngredients: feedbackDto.correctIngredients,
         correctDescription: feedbackDto.correctDescription,
@@ -75,11 +87,29 @@ export class FoodRecognitionController {
     return { message: 'Feedback submitted successfully. Thank you for helping improve Foozam!' };
   }
 
-  @Get('history/:userId')
+  @Get('history')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get user scan history' })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'offset', required: false, type: Number })
   async getUserHistory(
+    @GetUser() user: any,
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number,
+  ) {
+    return this.foodRecognitionService.getUserHistory(
+      user.userId,
+      limit || 20,
+      offset || 0,
+    );
+  }
+
+  @Get('history/:userId')
+  @ApiOperation({ summary: 'Get user scan history (legacy/public)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
+  async getUserHistoryLegacy(
     @Param('userId') userId: string,
     @Query('limit') limit?: number,
     @Query('offset') offset?: number,
