@@ -17,6 +17,9 @@ export class User extends Document {
 
   @Prop({ default: Date.now })
   lastLogin: Date;
+
+  @Prop({ default: 'user' })
+  role: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

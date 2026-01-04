@@ -4,6 +4,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { FoodRecognitionModule } from './food-recognition/food-recognition.module';
 import { AuthModule } from './auth/auth.module';
 import { AppController } from './app.controller';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { AppController } from './app.controller';
     }),
     AuthModule,
     FoodRecognitionModule,
+    AnalyticsModule,
   ],
   controllers: [AppController],
 })
